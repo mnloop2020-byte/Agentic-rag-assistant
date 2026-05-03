@@ -9,12 +9,21 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
+  const [uploadStatusType, setUploadStatusType] = useState("info");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [pdfPanelOpen, setPdfPanelOpen] = useState(true);
 
   const endOfMessagesRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  const autoResize = (e) => {
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
+  };
 
   const sendMessage = async () => {
     const trimmed = input.trim();
@@ -22,6 +31,7 @@ function App() {
 
     setLoading(true);
     setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     setMessages((prev) => [...prev, { role: "user", text: trimmed }]);
 
     try {
@@ -32,11 +42,7 @@ function App() {
       });
 
       const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data?.error || "Chat request failed");
-      }
-
+      if (!response.ok) throw new Error(data?.error || "Chat request failed");
       setMessages((prev) => [...prev, { role: "ai", text: data.answer }]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "ai", text: err?.message ?? "Chat request failed" }]);
@@ -47,7 +53,6 @@ function App() {
 
   const uploadDocument = async () => {
     if (!selectedFile) return;
-
     setUploading(true);
     setUploadStatus(null);
 
@@ -61,21 +66,20 @@ function App() {
       });
 
       const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Upload failed");
 
-      if (!response.ok) {
-        throw new Error(data?.error || "Upload failed");
-      }
-
-      setUploadStatus("Uploaded and ingested successfully.");
+      setUploadStatus("Document ingested successfully!");
+      setUploadStatusType("success");
       setSelectedFile(null);
     } catch (err) {
       setUploadStatus(err?.message ?? "Upload failed");
+      setUploadStatusType("error");
     } finally {
       setUploading(false);
     }
   };
 
-  const onComposerKeyDown = (e) => {
+  const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -83,87 +87,160 @@ function App() {
   };
 
   return (
-    <div className="appShell">
-      <header className="appHeader">
-        <div className="appHeaderInner">
-          <div className="appTitle">Agentic Personal Assistant</div>
-          <div className="appSubtitle">Upload PDFs, then chat with your knowledge base.</div>
+    <div className="shell">
+      {/* ─── Sidebar ─── */}
+      <aside className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
+        <div className="sidebar-top">
+          <div className="logo">
+            <div className="logo-icon">⬡</div>
+            {sidebarOpen && <span className="logo-text">Agentice</span>}
+          </div>
+          <button className="toggle-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            {sidebarOpen ? "←" : "→"}
+          </button>
         </div>
-      </header>
 
-      <main className="appMain">
-        <section className="uploadPanel">
-          <div className="uploadRow">
-            <label className="uploadButton" htmlFor="pdf-upload">
-              Choose PDF
+        {sidebarOpen && (
+          <div className="sidebar-section">
+            <p className="sidebar-label">About</p>
+            <p className="sidebar-info">
+              Upload PDF documents to your knowledge base, then ask questions and get AI-powered answers.
+            </p>
+          </div>
+        )}
+      </aside>
+
+      {/* ─── Main Chat ─── */}
+      <main className="chat-area">
+        <div className="chat-header">
+          {!sidebarOpen && (
+            <button className="toggle-btn-inline" onClick={() => setSidebarOpen(true)}>⬡</button>
+          )}
+          <div className="chat-title">Personal Assistant</div>
+
+          {/* PDF Panel Toggle Button */}
+          <button
+            className={`pdf-toggle-btn ${pdfPanelOpen ? "panel-open" : ""}`}
+            onClick={() => setPdfPanelOpen(!pdfPanelOpen)}
+          >
+            <span>📄</span>
+            {pdfPanelOpen ? "Hide PDF Panel" : "Show PDF Panel"}
+          </button>
+
+          <div className="status-dot">
+            <span className="dot" />
+            Online
+          </div>
+        </div>
+
+        <div className="messages-wrap">
+          {messages.length === 0 && (
+            <div className="empty-state">
+              <div className="empty-icon">✦</div>
+              <h2>How can I help you?</h2>
+              <p>Upload a PDF to your knowledge base, then start asking questions.</p>
+              <div className="suggestions">
+                {["Summarize my document", "What are the key points?", "Find specific information"].map((s) => (
+                  <button key={s} className="suggestion-chip" onClick={() => setInput(s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((m, i) => (
+            <div key={i} className={`msg-row ${m.role}`}>
+              <div className="msg-avatar">
+                {m.role === "user" ? "U" : "⬡"}
+              </div>
+              <div className="msg-bubble">
+                {m.role === "ai" ? <ReactMarkdown>{m.text}</ReactMarkdown> : m.text}
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="msg-row ai">
+              <div className="msg-avatar">⬡</div>
+              <div className="msg-bubble typing">
+                <span /><span /><span />
+              </div>
+            </div>
+          )}
+
+          <div ref={endOfMessagesRef} />
+        </div>
+
+        <div className="composer-wrap">
+          <div className="composer-box">
+            <textarea
+              ref={textareaRef}
+              className="composer-input"
+              value={input}
+              onChange={(e) => { setInput(e.target.value); autoResize(e); }}
+              onKeyDown={onKeyDown}
+              placeholder="Ask anything about your documents…"
+              rows={1}
+            />
+            <button
+              className="send-btn"
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+            >
+              ↑
+            </button>
+          </div>
+          <p className="composer-hint">Enter to send · Shift+Enter for new line</p>
+        </div>
+      </main>
+
+      {/* ─── PDF Panel (right) ─── */}
+      <aside className={`pdf-panel ${pdfPanelOpen ? "" : "hidden"}`}>
+        <div className="pdf-panel-header">
+          <span className="pdf-panel-title">📄 Knowledge Base</span>
+          <button className="pdf-panel-close" onClick={() => setPdfPanelOpen(false)}>✕</button>
+        </div>
+
+        <div className="pdf-panel-body">
+          <p className="pdf-panel-label">Upload Document</p>
+
+          <div className="upload-zone">
+            <div className="upload-icon">📄</div>
+            <p className="upload-hint">Drop a PDF or click to browse</p>
+            <label className="file-label" htmlFor="pdf-upload">
+              {selectedFile ? selectedFile.name : "Choose PDF"}
             </label>
             <input
               id="pdf-upload"
-              className="uploadInput"
               type="file"
               accept="application/pdf,.pdf"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+              style={{ display: "none" }}
+              onChange={(e) => {
+                setSelectedFile(e.target.files?.[0] ?? null);
+                setUploadStatus(null);
+              }}
             />
             <button
-              className="primaryButton"
+              className="upload-btn"
               onClick={uploadDocument}
               disabled={!selectedFile || uploading}
             >
-              {uploading ? "Uploading..." : "Upload"}
+              {uploading ? <span className="spinner" /> : "Upload & Ingest"}
             </button>
-            <div className="uploadMeta">
-              {selectedFile ? selectedFile.name : "No file selected"}
-            </div>
-          </div>
-          {uploadStatus && <div className="uploadStatus">{uploadStatus}</div>}
-        </section>
-
-        <section className="chatPanel">
-          <div className="messages">
-            {messages.length === 0 && (
-              <div className="emptyState">
-                Upload a PDF to ingest it, then ask a question below.
+            {uploadStatus && (
+              <div className={`upload-status ${uploadStatusType}`}>
+                {uploadStatus}
               </div>
             )}
-
-            {messages.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "messageRow isUser" : "messageRow isAi"}>
-                <div className="messageBubble">
-                  {m.role === "ai" ? <ReactMarkdown>{m.text}</ReactMarkdown> : m.text}
-                </div>
-              </div>
-            ))}
-
-            {loading && (
-              <div className="messageRow isAi">
-                <div className="messageBubble isTyping">Thinking…</div>
-              </div>
-            )}
-            <div ref={endOfMessagesRef} />
           </div>
 
-          <div className="composer">
-            <div className="composerInner">
-              <textarea
-                className="composerInput"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onComposerKeyDown}
-                placeholder="Message your assistant…"
-                rows={1}
-              />
-              <button
-                className="sendButton"
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-              >
-                Send
-              </button>
-            </div>
-            <div className="composerHint">Enter to send · Shift+Enter for a new line</div>
-          </div>
-        </section>
-      </main>
+          <p className="pdf-panel-label" style={{ marginTop: 4 }}>About</p>
+          <p className="pdf-panel-info">
+            Upload PDF documents to your knowledge base, then ask questions and get AI-powered answers.
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
